@@ -9,6 +9,10 @@ The proxy is fully decoupled from any app, reusable, and extractable to a separa
 The proxy is **multi-backend**: switch between Copilot, Anthropic, OpenAI, Ollama (or any
 OpenAI-compatible API) by changing environment variables — no code changes, no app restarts required.
 
+**Published**: [`@riteshagarwal-au/standalone-aiproxy`](https://github.com/riteshagarwal-au/standalone-aiproxy/pkgs/npm/standalone-aiproxy) on GitHub Packages
+
+**Repo**: [github.com/riteshagarwal-au/standalone-aiproxy](https://github.com/riteshagarwal-au/standalone-aiproxy)
+
 ---
 
 ## Target Architecture

@@ -159,6 +159,137 @@ No Copilot-specific code in your AI app. Swap backends by changing proxy env var
 
 ---
 
+## Installing the Proxy as an npm Package
+
+The proxy is published to GitHub Packages as `@riteshagarwal-au/standalone-aiproxy`.
+
+### Step 1 — Configure GitHub Packages registry
+
+In your AI app's root, create or update `.npmrc`:
+
+```
+@riteshagarwal-au:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GH_TOKEN}
+```
+
+> The `GH_TOKEN` must have `read:packages` scope.
+
+### Step 2 — Install
+
+```bash
+npm install @riteshagarwal-au/standalone-aiproxy
+```
+
+### Step 3 — Start the proxy programmatically
+
+```typescript
+import { ProxyServer } from '@riteshagarwal-au/standalone-aiproxy';
+
+const proxy = new ProxyServer({
+  port:             parseInt(process.env.PROXY_PORT ?? '3100'),
+  integrationId:    process.env.PROXY_INTEGRATION_ID ?? 'vscode-chat',
+  rateLimitSeconds: 0,
+  rateLimitWait:    false,
+  logRequests:      false,
+  showToken:        false,
+  storageDir:       './data',
+});
+
+await proxy.start();
+
+// Now your app can call http://localhost:3100/v1/chat/completions
+```
+
+### Step 4 — Call the proxy from your app
+
+```typescript
+import OpenAI from 'openai';
+
+const llm = new OpenAI({
+  baseURL: `http://localhost:${process.env.PROXY_PORT ?? 3100}/v1`,
+  apiKey: 'unused',
+});
+
+// Works with any framework: plain fetch, LangChain, LlamaIndex, Vercel AI SDK, etc.
+const response = await llm.chat.completions.create({
+  model: 'claude-haiku-4.5',
+  messages: [
+    { role: 'system', content: 'You are a helpful assistant.' },
+    { role: 'user',   content: userMessage },
+  ],
+});
+
+return response.choices[0].message.content;
+```
+
+### With LangChain
+
+```typescript
+import { ChatOpenAI } from '@langchain/openai';
+
+const model = new ChatOpenAI({
+  modelName: 'claude-haiku-4.5',
+  configuration: {
+    baseURL: 'http://localhost:3100/v1',
+    apiKey: 'unused',
+  },
+});
+
+// Use in any LangChain chain, agent, or RAG pipeline
+const result = await model.invoke('What is the capital of France?');
+```
+
+### With Vercel AI SDK
+
+```typescript
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText } from 'ai';
+
+const copilot = createOpenAI({
+  baseURL: 'http://localhost:3100/v1',
+  apiKey: 'unused',
+});
+
+const { text } = await generateText({
+  model: copilot('claude-haiku-4.5'),
+  prompt: 'What is the capital of France?',
+});
+```
+
+### With streaming (any SDK)
+
+```typescript
+const stream = await llm.chat.completions.create({
+  model: 'claude-haiku-4.5',
+  messages: [{ role: 'user', content: 'Tell me a story.' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? '');
+}
+```
+
+### Switching models at runtime
+
+```typescript
+// The proxy exposes all 36 enterprise models — switch by just changing the model name
+const models = [
+  'claude-haiku-4.5',    // Fast, cheap
+  'claude-sonnet-4.6',  // Balanced
+  'claude-opus-4.6',    // Most capable
+  'gpt-4o',             // OpenAI alternative
+  'gemini-3.5-flash',   // Google alternative
+];
+
+const response = await llm.chat.completions.create({
+  model: process.env.LLM_MODEL ?? 'claude-haiku-4.5',
+  messages: [...],
+});
+```
+
+---
+
 ## One-Time Setup
 
 ```bash
