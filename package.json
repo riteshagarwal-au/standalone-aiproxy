@@ -1,0 +1,35 @@
+{
+  "name": "@riteshagarwal-au/standalone-aiproxy",
+  "version": "0.1.0",
+  "description": "Standalone AI proxy — routes OpenAI-compatible requests to GitHub Copilot (and future backends)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist/", "src/", ".env.example", "README.md"],
+  "scripts": {
+    "build": "node esbuild.js",
+    "start": "node dist/index.js",
+    "dev": "node --env-file=.env dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node esbuild.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/riteshagarwal-au/standalone-aiproxy.git"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5",
+    "tsx": "^4.15.7",
+    "openai": "^4.52.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

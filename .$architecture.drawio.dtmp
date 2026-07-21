@@ -1,0 +1,85 @@
+<mxfile host="Electron" agent="GitHub Copilot">
+  <diagram name="Standalone AI Proxy Architecture" id="architecture">
+    <mxGraphModel dx="1245" dy="659" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;" value="Standalone AI Proxy — Architecture" vertex="1">
+          <mxGeometry height="40" width="800" x="427" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="aiapp-bg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=6;" value="" vertex="1">
+          <mxGeometry height="280" width="200" x="80" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="aiapp-label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;fontStyle=1;fontSize=13;" value="AI Application" vertex="1">
+          <mxGeometry height="30" width="200" x="80" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="openai-sdk" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" value="OpenAI SDK&#xa;&#xa;baseURL: http://localhost:3100/v1&#xa;apiKey: (unused)" vertex="1">
+          <mxGeometry height="80" width="160" x="100" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="app-note" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=10;fontStyle=2;" value="No LLM-specific code&#xa;Standard OpenAI calls only" vertex="1">
+          <mxGeometry height="40" width="180" x="90" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-app-proxy" edge="1" parent="1" source="aiapp-bg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" target="proxy-bg" value="HTTP&#xa;POST /v1/chat/completions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy-bg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=4;" value="" vertex="1">
+          <mxGeometry height="480" width="380" x="380" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy-label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;fontStyle=1;fontSize=13;" value="Standalone Copilot Proxy&#xa;Node.js  |  :3100" vertex="1">
+          <mxGeometry height="40" width="380" x="380" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="router" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" value="Router&#xa;&#xa;POST /v1/chat/completions&#xa;POST /v1/messages (Anthropic)&#xa;GET  /v1/models&#xa;POST /v1/embeddings&#xa;GET  /health  |  /metrics" vertex="1">
+          <mxGeometry height="120" width="200" x="400" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="translate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" value="translate.ts&#xa;Anthropic ↔ OpenAI" vertex="1">
+          <mxGeometry height="50" width="200" x="400" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="backend-sel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" value="Backend Selector&#xa;LLM_BACKEND env var" vertex="1">
+          <mxGeometry height="50" width="200" x="400" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" value="Auth Adapters&#xa;&#xa;copilot-auth.ts → JWT exchange&#xa;openai   → Bearer key&#xa;anthropic → x-api-key&#xa;ollama   → (none)" vertex="1">
+          <mxGeometry height="110" width="200" x="400" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="metrics" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" value="Metrics &amp; Rate Limiter" vertex="1">
+          <mxGeometry height="50" width="120" x="618" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="tokencache" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" value="Token Cache&#xa;(in-memory, auto-refresh)" vertex="1">
+          <mxGeometry height="50" width="120" x="618" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-proxy-copilot" edge="1" parent="1" source="proxy-bg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="copilot-backend" value="Bearer JWT&#xa;HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-proxy-anthropic" edge="1" parent="1" source="proxy-bg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="anthropic-backend" value="x-api-key&#xa;HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-proxy-openai" edge="1" parent="1" source="proxy-bg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10;exitX=1;exitY=0.65;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="openai-backend" value="Bearer key&#xa;HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-proxy-ollama" edge="1" parent="1" source="proxy-bg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="ollama-backend" value="(no auth)&#xa;HTTP">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="backends-label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=12;" value="LLM Backends" vertex="1">
+          <mxGeometry height="30" width="200" x="900" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="copilot-backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="GitHub Copilot API&#xa;api.githubcopilot.com&#xa;&#xa;Claude · GPT · Gemini" vertex="1">
+          <mxGeometry height="80" width="200" x="900" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="anthropic-backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="Anthropic API&#xa;api.anthropic.com&#xa;&#xa;Claude models" vertex="1">
+          <mxGeometry height="80" width="200" x="900" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="openai-backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="OpenAI API&#xa;api.openai.com&#xa;&#xa;GPT models" vertex="1">
+          <mxGeometry height="80" width="200" x="900" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama-backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="Ollama (Local LLM)&#xa;localhost:11434&#xa;&#xa;Any local model" vertex="1">
+          <mxGeometry height="80" width="200" x="900" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="deploy-note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;" value="Deployment Modes&#xa;&#xa;Mode 1 (now): AI App + Proxy on same machine, different ports&#xa;Mode 2 (later): Proxy as independent container / cloud service&#xa;&#xa;App only changes: baseURL env var" vertex="1">
+          <mxGeometry height="80" width="680" x="70" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="env-note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;" value="Backend switched via env vars only:&#xa;LLM_BACKEND=copilot|openai|anthropic|ollama&#xa;LLM_API_KEY=...&#xa;LLM_DEFAULT_MODEL=claude-haiku-4.5" vertex="1">
+          <mxGeometry height="80" width="220" x="900" y="590" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
