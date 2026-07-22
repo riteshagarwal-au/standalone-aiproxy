@@ -1,0 +1,12 @@
+services:
+  aiproxy:
+    image: aiproxy:latest
+    container_name: aiproxy
+    build:
+      context: .
+    ports:
+      - "3100:3100"
+    environment:
+      - PROXY_PORT=3100
+      - GHU_APP_TOKEN=${GHU_APP_TOKEN}
+      - PROXY_INTEGRATION_ID=${PROXY_INTEGRATION_ID}

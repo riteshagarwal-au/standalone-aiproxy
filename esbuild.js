@@ -5,7 +5,7 @@ esbuild.build({
   entryPoints: [path.join(__dirname, 'src/index.ts')],
   bundle: true,
   platform: 'node',
-  target: 'node18',
+  target: 'node20',
   outfile: path.join(__dirname, 'dist/index.js'),
   sourcemap: true,
   external: [],

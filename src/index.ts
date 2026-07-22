@@ -16,6 +16,7 @@ import type { ProxyConfig } from './types';
 
 const config: ProxyConfig = {
   port:             parseInt(process.env.PROXY_PORT             ?? '3100'),
+  host:             process.env.PROXY_HOST                      ?? '127.0.0.1',
   rateLimitSeconds: parseFloat(process.env.PROXY_RATE_LIMIT_SECONDS ?? '0'),
   rateLimitWait:    process.env.PROXY_RATE_LIMIT_WAIT            === 'true',
   logRequests:      process.env.PROXY_LOG_REQUESTS              === 'true',

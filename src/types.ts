@@ -36,6 +36,7 @@ export interface ExchangeEntry {
 /** Standalone proxy config — loaded from environment variables. */
 export interface ProxyConfig {
   port: number;
+  host: string;
   rateLimitSeconds: number;
   rateLimitWait: boolean;
   logRequests: boolean;

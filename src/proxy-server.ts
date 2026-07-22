@@ -25,6 +25,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import {
   getCopilotToken,
   getGitHubToken,
@@ -258,9 +259,9 @@ export class ProxyServer {
         });
       });
       this.server.on('error', reject);
-      this.server.listen(this.cfg.port, '127.0.0.1', () => {
-        console.log(`[proxy] Listening on http://127.0.0.1:${this.cfg.port}`);
-        console.log(`[proxy] Dashboard: http://127.0.0.1:${this.cfg.port}/dashboard`);
+      this.server.listen(this.cfg.port, this.cfg.host, () => {
+        console.log(`[proxy] Listening on http://${this.cfg.host}:${this.cfg.port}`);
+        console.log(`[proxy] Dashboard: http://${this.cfg.host}:${this.cfg.port}/dashboard`);
         resolve();
       });
     });
@@ -470,7 +471,7 @@ export class ProxyServer {
     const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
     const model = String(body.model ?? 'claude-haiku-4.5');
     const isStream = Boolean(body.stream);
-    const requestId = crypto.randomUUID();
+    const requestId = randomUUID();
     const start = Date.now();
 
     if (this.cfg.logRequests) {
