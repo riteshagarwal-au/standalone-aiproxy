@@ -1,0 +1,22 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — never commit real secrets/subscription IDs.
+#
+# resource_group_name, acr_name, app_service_plan_name, keyvault_name, and
+# location must match the EXISTING shared resources already created by
+# AI-CareerCoach's own Terraform (infra/main.tf in that repo) — this
+# Terraform references them via data sources rather than creating its own.
+# Only webapp_name and image_name are distinct to this AIProxy deployment.
+# The ghu-app-token secret must already exist in that shared Key Vault
+# (also created by AI-CareerCoach's Terraform) — this config reads it, it
+# does not create it.
+
+subscription_id       = "00000000-0000-0000-0000-000000000000"
+location               = "australiaeast"
+resource_group_name    = "rg-rits"
+acr_name               = "acrrits"
+app_service_plan_name  = "asp-rits"
+keyvault_name          = "kv-aicoach-rits"
+webapp_name            = "llm-aiproxy"
+image_name             = "aiproxy"
+proxy_integration_id   = "vscode-chat"
+proxy_port             = "3100"
