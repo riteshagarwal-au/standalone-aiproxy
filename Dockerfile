@@ -18,11 +18,11 @@ FROM node:20-slim AS build
 
 WORKDIR /srv/proxy
 
-COPY package.json package-lock.json ./
+COPY app/package.json app/package-lock.json ./
 RUN npm ci
 
-COPY tsconfig.json esbuild.js ./
-COPY src/ src/
+COPY app/tsconfig.json app/esbuild.js ./
+COPY app/src/ src/
 RUN npm run build
 
 FROM node:20-slim
@@ -30,7 +30,7 @@ FROM node:20-slim
 WORKDIR /srv/proxy
 
 # Only production dependencies are needed at runtime.
-COPY package.json package-lock.json ./
+COPY app/package.json app/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /srv/proxy/dist/ dist/

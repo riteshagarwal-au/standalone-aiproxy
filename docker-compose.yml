@@ -6,7 +6,7 @@ services:
       context: .
     ports:
       - "3100:3100"
+    env_file:
+      - app/.env
     environment:
       - PROXY_PORT=3100
-      - GHU_APP_TOKEN=${GHU_APP_TOKEN}
-      - PROXY_INTEGRATION_ID=${PROXY_INTEGRATION_ID}
