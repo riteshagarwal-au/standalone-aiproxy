@@ -214,14 +214,38 @@ Bedrock requires **AWS SigV4 request signing** on every call. The adapter uses t
 
 **Dependency added**: `@aws-sdk/client-bedrock-runtime`
 
+**Auth: use the AWS SDK default credential provider chain — no static keys.**
+The adapter instantiates `new BedrockRuntimeClient({ region })` with no explicit `credentials`,
+so the SDK resolves auth automatically from (in order): env vars → shared `~/.aws/credentials`
+profile (`AWS_PROFILE`) → SSO → EC2/ECS/Lambda instance role. This works transparently across
+environments without code changes:
+
+| Environment | How auth resolves |
+|---|---|
+| Local dev | `AWS_PROFILE=<stax-profile>` env var → temp STS creds from `~/.aws/credentials` (written by `stax2aws login`) |
+| Production, in-account (ECS/EC2/Lambda) | IAM role / instance profile — no env vars needed |
+| Production, outside AWS | Needs long-lived creds — **not currently available** (see limitation below) |
+
 ```
 # New env vars for Bedrock
 LLM_BACKEND=aws-bedrock
-AWS_ACCESS_KEY_ID=<your-access-key>
-AWS_SECRET_ACCESS_KEY=<your-secret-key>
-AWS_REGION=us-east-1
-AWS_BEDROCK_MODEL_ID=anthropic.claude-haiku-4-5
+AWS_REGION=ap-southeast-2
+AWS_BEDROCK_MODEL_ID=au.anthropic.claude-haiku-4-5-20251001-v1:0
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY only needed if no profile/role is available
 ```
+
+**⚠️ Known limitation — Stax-managed accounts have no long-lived credential option**:
+- This account's IAM is managed via Stax SSO; `iam:CreateUser` is **explicitly denied by an
+  org-level SCP**, so static-key IAM users cannot be created for the proxy.
+- `stax2aws login` is an **interactive device-code flow** (browser/QR) — there is no
+  headless/programmatic login. Sessions expire after a max of 8h (`session-duration: 28800`
+  in `~/stax2aws.yaml`), then require a human to re-authenticate.
+- **Temporary workaround (local dev only)**: run `stax2aws login -p <profile>` (or `-p <profile> -f`
+  to force-refresh) whenever the proxy starts hitting `ExpiredToken` errors calling Bedrock. Not
+  viable for an unattended/production service.
+- **Longer-term fix (pending IT)**: either (a) a permission set with a longer max session
+  duration, (b) an OIDC/federated machine-identity mechanism from Stax, or (c) deploying the
+  proxy inside this AWS account so it can use a native IAM role instead of Stax entirely.
 
 **Why native adapter over a bridge**:
 - No extra process to operate
@@ -238,6 +262,12 @@ Proxy receives OpenAI-format request
 ```
 
 **Supported models** (via Bedrock): `anthropic.claude-*`, `amazon.titan-*`, `meta.llama*`, `mistral.*`, `cohere.*`
+
+**⚠️ Model IDs require cross-region inference profiles, not raw model IDs** — e.g. invoking
+`anthropic.claude-haiku-4-5-20251001-v1:0` directly fails with
+`ValidationException: on-demand throughput isn't supported`. Use the inference profile ID instead
+(e.g. `au.anthropic.claude-haiku-4-5-20251001-v1:0` or `global.anthropic.claude-haiku-4-5-20251001-v1:0`),
+found via `aws bedrock list-inference-profiles --region <region>`.
 
 ---
 
