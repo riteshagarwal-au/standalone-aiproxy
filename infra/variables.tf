@@ -55,7 +55,19 @@ variable "aws_region" {
 }
 
 variable "aws_bedrock_model_id" {
-  description = "Bedrock cross-region inference profile ID for the aws-bedrock backend (e.g. au.anthropic.claude-haiku-4-5-20251001-v1:0)"
+  description = "Optional override Bedrock model ID/inference-profile ID for the aws-bedrock backend, used only when a request's model isn't in BEDROCK_MODEL_CATALOG (aws-bedrock.ts). Leave empty to fall back to the first catalog entry — no model needs to be hardcoded here."
+  type        = string
+  default     = ""
+}
+
+variable "aws_bedrock_models_allowlist" {
+  description = "Comma-separated friendly model ids shown by /v1/models for the aws-bedrock backend (must match keys in BEDROCK_MODEL_CATALOG in aws-bedrock.ts, e.g. claude-haiku-4.5,gemma-3-27b). Empty = show full catalog."
+  type        = string
+  default     = "claude-haiku-4.5,gemma-3-27b"
+}
+
+variable "copilot_models_allowlist" {
+  description = "Comma-separated model ids shown by /v1/models for the copilot backend. Empty = show the full upstream Copilot model list."
   type        = string
   default     = ""
 }

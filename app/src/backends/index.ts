@@ -63,7 +63,7 @@ export function missingRequiredEnv(name: BackendName): string[] {
     anthropic: ['LLM_API_KEY'],
     ollama: [],
     'azure-openai': ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_DEPLOYMENT'],
-    'aws-bedrock': ['AWS_BEDROCK_MODEL_ID'],
+    'aws-bedrock': [], // model resolved from BEDROCK_MODEL_CATALOG / AWS_BEDROCK_MODEL_ID (both optional, see aws-bedrock.ts)
   };
   return (need[name] ?? []).filter(k => !process.env[k]);
 }

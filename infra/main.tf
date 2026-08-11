@@ -86,9 +86,13 @@ resource "azurerm_linux_web_app" "aiproxy" {
     # aws-bedrock backend (Key Vault references — secrets uploaded manually, ~8h STS validity)
     AWS_REGION            = var.aws_region
     AWS_BEDROCK_MODEL_ID  = var.aws_bedrock_model_id
+    AWS_BEDROCK_MODELS_ALLOWLIST = var.aws_bedrock_models_allowlist
     AWS_ACCESS_KEY_ID     = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=aws-access-key-id)"
     AWS_SECRET_ACCESS_KEY = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=aws-secret-access-key)"
     AWS_SESSION_TOKEN     = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=aws-session-token)"
+
+    # copilot backend — filter the passthrough /v1/models list shown to clients (e.g. AItutor admin)
+    COPILOT_MODELS_ALLOWLIST = var.copilot_models_allowlist
   }
 
   lifecycle {

@@ -476,12 +476,12 @@ async function setBackend(name) {
       const headers = await adapter.getAuthHeaders();
       const resp = await fetch(`${baseUrl}/models${adapter.getQuerySuffix?.() ?? ''}`, { headers });
       if (resp.ok) {
-        json(res, await resp.json());
+        json(res, _filterModels(await resp.json()));
       } else {
-        json(res, _fallbackModels());
+        json(res, _filterModels(_fallbackModels()));
       }
     } catch {
-      json(res, _fallbackModels());
+      json(res, _filterModels(_fallbackModels()));
     }
   }
 
@@ -797,6 +797,15 @@ function _fallbackModels(): unknown {
     object: 'list',
     data: FALLBACK_MODELS.map(id => ({ id, object: 'model', created: 1700000000, owned_by: 'github-copilot' })),
   };
+}
+
+/** Filter a `{ object: 'list', data: [{id,...}] }` models response to COPILOT_MODELS_ALLOWLIST
+ * (comma-separated model ids) when set; otherwise return the list unfiltered. */
+function _filterModels(list: unknown): unknown {
+  const allowlist = process.env.COPILOT_MODELS_ALLOWLIST?.split(',').map(s => s.trim()).filter(Boolean);
+  if (!allowlist || allowlist.length === 0) return list;
+  const data = (list as { data?: Array<{ id: string }> })?.data ?? [];
+  return { object: 'list', data: data.filter(m => allowlist.includes(m.id)) };
 }
 
 // ── Dashboard HTML ────────────────────────────────────────────────────────────
