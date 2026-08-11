@@ -142,7 +142,11 @@ PROXY_METRICS_FILE=
 
 ---
 
-### Phase 2 — Multi-Backend Support
+### Phase 2 — Multi-Backend Support ✅ IMPLEMENTED (2026-08-11)
+
+Implemented in `app/src/backends/` — see `types.ts` for the `HttpAdapter`/`NativeAdapter`
+interfaces actually used (slightly different shape than the interface sketched below, since
+`anthropic` needed its own request/response translation rather than a passthrough).
 
 #### Step 6 — Backend config (env vars)
 ```
@@ -181,11 +185,51 @@ interface BackendAdapter {
 #### Step 8 — Proxy server uses backend adapter
 The main request handler resolves the backend at startup (or per-request if hot-swapping is needed) and delegates auth + URL resolution to the adapter. The routing, streaming, metrics, and translation logic stays unchanged.
 
+#### Step 8b — Admin backend switcher (`GET/POST /admin`) ✅ IMPLEMENTED
+
+An admin page to pick the active `LLM_BACKEND` at runtime, without redeploying or editing env vars.
+
+- `GET /admin` — HTML page listing all backends (`copilot`, `openai`, `anthropic`, `ollama`,
+  `azure-openai`, `aws-bedrock`), highlighting the currently active one, with a dropdown/buttons
+  to switch.
+- `POST /admin/backend` — body `{ backend: "aws-bedrock" }` → validates the backend's required
+  env vars are already present (e.g. `AWS_REGION`, `AWS_BEDROCK_MODEL_ID` for Bedrock; Key Vault
+  is still the source of the actual AWS secrets, this endpoint only switches routing) → updates
+  an in-memory `currentBackend` variable → the request handler reads this instead of
+  `process.env.LLM_BACKEND` directly.
+- `/health` and `/dashboard` should reflect the live `currentBackend` (not the hardcoded
+  `backend: 'copilot'` currently in `handleHealth()`).
+
+**Caveats**:
+- **No auth on `/admin` yet** — needs at least a shared-secret header or basic auth before being
+  exposed beyond localhost, since anyone who can reach it could change the active backend. **Still
+  an open item** — not yet implemented.
+- Switching to `aws-bedrock` only works if credentials are already resolvable (via Key Vault-fed
+  env vars per Step 10) — this endpoint changes routing only, it does not fetch/provision creds.
+
+**Persisting the choice across restarts/redeploys** — ✅ implemented (`app/src/backends/index.ts`
+`initBackendPersistence`/`setCurrentBackend`, writes to `<PROXY_STORAGE_DIR>/backend-override.json`):
+- Write the selected backend to `/home/data/backend-override.json` on `POST /admin/backend`;
+  read it at startup (falls back to `LLM_BACKEND` env var if the file doesn't exist).
+- On **Azure App Service for Containers**, `/home` is only a persistent Azure Files-backed mount
+  (survives both restarts and CI-pushed image redeploys) if
+  `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` is set — this **defaults to `false` for custom
+  container deployments** (unlike code-based App Service, where it defaults to `true`). Checked
+  [infra/main.tf](../infra/main.tf) — this setting is **not currently present**, so `/home` is
+  presently ephemeral for this Web App. **TODO**: add
+  `WEBSITES_ENABLE_APP_SERVICE_STORAGE = "true"` to `app_settings` in `azurerm_linux_web_app.aiproxy`.
+- Locally, [docker-compose.yml](../docker-compose.yml) has no volume mount, so `/home/data` is lost
+  on every `docker-compose down`/rebuild. **TODO**: add `volumes: ["./data:/home/data"]` under the
+  `aiproxy` service.
+
+Both TODOs above (`WEBSITES_ENABLE_APP_SERVICE_STORAGE` + `PROXY_STORAGE_DIR=/home/data` in
+`infra/main.tf`; the docker-compose volume mount) were applied and `terraform apply`'d on 2026-08-11.
+
 ---
 
-### Phase 3 — Cloud LLM Backends (Azure AI Foundry + AWS Bedrock)
+### Phase 3 — Cloud LLM Backends (Azure AI Foundry + AWS Bedrock) ✅ IMPLEMENTED (2026-08-11)
 
-#### Step 9 — Azure AI Foundry adapter (`src/backends/azure-openai.ts`)
+#### Step 9 — Azure AI Foundry adapter (`src/backends/azure-openai.ts`) ✅ IMPLEMENTED
 
 Azure OpenAI exposes an OpenAI-compatible API — minimal adapter needed.
 
@@ -208,9 +252,16 @@ Everything else (streaming, metrics, routing) is unchanged.
 
 ---
 
-#### Step 10 — AWS Bedrock adapter (`src/backends/aws-bedrock.ts`)
+#### Step 10 — AWS Bedrock adapter (`src/backends/aws-bedrock.ts`) ✅ IMPLEMENTED (Claude only)
 
 Bedrock requires **AWS SigV4 request signing** on every call. The adapter uses the AWS SDK to handle this — no manual HMAC implementation.
+
+**Scope note**: the implemented adapter only supports Anthropic Claude models (via Bedrock's
+Anthropic Messages request/response shape, shared with the native `anthropic` backend adapter
+in `src/backends/anthropic-format.ts`). Titan/Llama/Mistral/Cohere models use different
+request/response schemas on Bedrock and are **not yet wired up** despite being listed in the
+"Supported models" table below — that table describes what Bedrock itself offers, not adapter
+coverage.
 
 **Dependency added**: `@aws-sdk/client-bedrock-runtime`
 
@@ -240,12 +291,26 @@ AWS_BEDROCK_MODEL_ID=au.anthropic.claude-haiku-4-5-20251001-v1:0
 - `stax2aws login` is an **interactive device-code flow** (browser/QR) — there is no
   headless/programmatic login. Sessions expire after a max of 8h (`session-duration: 28800`
   in `~/stax2aws.yaml`), then require a human to re-authenticate.
-- **Temporary workaround (local dev only)**: run `stax2aws login -p <profile>` (or `-p <profile> -f`
-  to force-refresh) whenever the proxy starts hitting `ExpiredToken` errors calling Bedrock. Not
-  viable for an unattended/production service.
+- **Production deployment is Azure App Service** (`https://llm-aiproxy.azurewebsites.net/`), not
+  AWS — so there's no EC2/ECS/Lambda instance role to fall back on either.
+- **Temporary workaround (Azure Key Vault + manual refresh, valid ~8h)**: store the 3 temporary
+  STS values from `~/.aws/credentials` (`aws_access_key_id`, `aws_secret_access_key`,
+  `aws_session_token` under the `stax-au1-telstra-agentic-framework` profile) as Key Vault
+  secrets, then reference them in App Service → Configuration → Application Settings as
+  `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` (plus `AWS_REGION`). The
+  AWS SDK's default credential chain reads these env vars automatically — **zero adapter code
+  needed** for this path. Requires manual refresh: run `stax2aws login -p
+  stax-au1-telstra-agentic-framework -f`, update the 3 Key Vault secret values, then restart the
+  Web App (Key Vault references cache for ~24h and won't auto-pick-up a rotated secret without a
+  restart). Not viable long-term — someone must repeat this at least every 8h.
 - **Longer-term fix (pending IT)**: either (a) a permission set with a longer max session
-  duration, (b) an OIDC/federated machine-identity mechanism from Stax, or (c) deploying the
-  proxy inside this AWS account so it can use a native IAM role instead of Stax entirely.
+  duration, (b) AWS IAM Roles Anywhere / OIDC federation from Azure AD → `AssumeRoleWithWebIdentity`
+  for real non-interactive, auto-refreshing creds (preferred — doesn't require IAM user creation,
+  so likely not blocked by the SCP), or (c) redeploying the proxy inside this AWS account so it
+  can use a native IAM role instead of Stax entirely. Once real long-lived/federated creds exist,
+  swapping the 3 Key Vault secret values for them requires no adapter code changes (same env vars);
+  only switching to OIDC/`AssumeRoleWithWebIdentity` would need a small adapter change to construct
+  the credential provider differently.
 
 **Why native adapter over a bridge**:
 - No extra process to operate

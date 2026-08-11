@@ -47,3 +47,15 @@ variable "proxy_port" {
   description = "TCP port AIProxy_Process listens on inside the container"
   type        = string
 }
+
+variable "aws_region" {
+  description = "AWS region for the aws-bedrock backend"
+  type        = string
+  default     = "ap-southeast-2"
+}
+
+variable "aws_bedrock_model_id" {
+  description = "Bedrock cross-region inference profile ID for the aws-bedrock backend (e.g. au.anthropic.claude-haiku-4-5-20251001-v1:0)"
+  type        = string
+  default     = ""
+}

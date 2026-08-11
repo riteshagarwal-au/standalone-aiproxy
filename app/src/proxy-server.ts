@@ -20,6 +20,8 @@
  *   GET  /dashboard             — inline HTML UI
  *   GET  /compilation           — inline HTML inspector
  *   GET  /compilation/data      — JSON exchange list
+ *   GET  /admin                 — backend switcher UI
+ *   POST /admin/backend         — switch active LLM_BACKEND at runtime
  */
 
 import * as http from 'http';
@@ -33,16 +35,18 @@ import {
   getCachedTokenString,
   getCachedExpiresAt,
 } from './copilot-auth';
-import { anthropicToOpenAI, openAIToAnthropicResponse, stripStreamOptionsForClaude } from './translate';
+import { anthropicToOpenAI, openAIToAnthropicResponse } from './translate';
 import type { SessionMetrics, ModelMetrics, CumulativeMetrics, ExchangeEntry, ProxyConfig } from './types';
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const COPILOT_HEADERS = (integrationId: string) => ({
-  'copilot-integration-id': integrationId,
-  'editor-version': 'vscode/1.99.0',
-  'x-github-api-version': '2025-04-01',
-});
+import {
+  getAdapter,
+  getCurrentBackend,
+  setCurrentBackend,
+  initBackendPersistence,
+  isBackendName,
+  missingRequiredEnv,
+  ALL_BACKENDS,
+} from './backends';
+import type { BackendAdapter } from './backends';
 
 const FALLBACK_MODELS = [
   'claude-sonnet-4.6', 'claude-sonnet-4.5', 'claude-opus-4.6', 'claude-opus-4.5',
@@ -244,6 +248,8 @@ export class ProxyServer {
           }
         } catch { /* ignore */ }
       }
+
+      initBackendPersistence(cfg.storageDir);
     }
   }
 
@@ -297,6 +303,7 @@ export class ProxyServer {
       if (url === '/dashboard') return html(res, DASHBOARD_HTML);
       if (url === '/compilation') return html(res, COMPILATION_HTML);
       if (url === '/compilation/data') return json(res, _exchanges);
+      if (url === '/admin') return html(res, this.renderAdminHtml());
       if (url === '/usage') return this.handleUsage(res);
       if (url === '/quota') return this.handleQuota(res);
       if (url === '/token') return this.handleToken(res);
@@ -306,6 +313,7 @@ export class ProxyServer {
 
     if (method === 'POST') {
       if (url === '/token/refresh') return this.handleTokenRefresh(res);
+      if (url === '/admin/backend') return this.handleSetBackend(req, res);
       if (url === '/v1/chat/completions') return this.handleChat(req, res);
       if (url === '/v1/messages') return this.handleMessages(req, res);
       if (url === '/v1/messages/count_tokens') return this.handleCountTokens(req, res);
@@ -323,7 +331,7 @@ export class ProxyServer {
     json(res, {
       status: 'ok',
       version: '0.1.0',
-      backend: 'copilot',
+      backend: getCurrentBackend(),
       auth: {
         github_token: process.env.GHU_APP_TOKEN ? 'present' : 'device-flow-required',
         copilot_token: tokenStr ? 'present' : 'not-yet-fetched',
@@ -409,14 +417,64 @@ export class ProxyServer {
     json(res, { status: 'ok', message: 'Token cache cleared. Next request will fetch a fresh token.' });
   }
 
+  // ── Admin: backend switcher (Step 8b) ─────────────────────────────────────
+
+  private renderAdminHtml(): string {
+    const current = getCurrentBackend();
+    const rows = ALL_BACKENDS.map(name => {
+      const missing = missingRequiredEnv(name);
+      const active = name === current;
+      const status = missing.length ? `missing: ${missing.join(', ')}` : 'ready';
+      return `<tr><td>${active ? '\u25cf' : ''} <b>${name}</b></td><td>${status}</td>` +
+        `<td>${active ? '(active)' : `<button onclick="setBackend('${name}')">Switch</button>`}</td></tr>`;
+    }).join('\n');
+
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI Proxy - Admin</title>
+<style>body{font-family:-apple-system,sans-serif;background:#0d1117;color:#e6edf3;padding:24px}
+table{border-collapse:collapse;width:100%}td{padding:8px 12px;border-bottom:1px solid #30363d}
+button{background:#238636;color:#fff;border:0;padding:4px 10px;border-radius:6px;cursor:pointer}</style></head>
+<body><h1>Active backend: ${current}</h1>
+<table>${rows}</table>
+<p id="msg"></p>
+<script>
+async function setBackend(name) {
+  const res = await fetch('/admin/backend', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ backend: name }) });
+  const data = await res.json();
+  document.getElementById('msg').textContent = res.ok ? 'Switched to ' + name + ' \u2014 reloading\u2026' : 'Error: ' + data.error;
+  if (res.ok) setTimeout(() => location.reload(), 500);
+}
+</script></body></html>`;
+  }
+
+  private async handleSetBackend(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = JSON.parse(await readBody(req)) as { backend?: string };
+      if (!isBackendName(body.backend)) {
+        json(res, { error: `Invalid backend. Must be one of: ${ALL_BACKENDS.join(', ')}` }, 400);
+        return;
+      }
+      const missing = missingRequiredEnv(body.backend);
+      if (missing.length) {
+        json(res, { error: `Cannot switch to "${body.backend}": missing required env vars: ${missing.join(', ')}` }, 400);
+        return;
+      }
+      setCurrentBackend(body.backend);
+      console.log(`[proxy] Backend switched to "${body.backend}"`);
+      json(res, { status: 'ok', backend: body.backend });
+    } catch (err) {
+      json(res, { error: String(err) }, 500);
+    }
+  }
+
   // ── Models ────────────────────────────────────────────────────────────────
 
   private async handleModels(res: http.ServerResponse): Promise<void> {
     try {
-      const { token, baseUrl } = await getCopilotToken();
-      const resp = await fetch(`${baseUrl}/models`, {
-        headers: { ...COPILOT_HEADERS(this.cfg.integrationId), Authorization: `Bearer ${token}` },
-      });
+      const adapter = getAdapter(this.cfg.integrationId);
+      if (adapter.kind === 'native') { json(res, await adapter.listModels()); return; }
+      const baseUrl = await adapter.getBaseUrl();
+      const headers = await adapter.getAuthHeaders();
+      const resp = await fetch(`${baseUrl}/models${adapter.getQuerySuffix?.() ?? ''}`, { headers });
       if (resp.ok) {
         json(res, await resp.json());
       } else {
@@ -432,10 +490,16 @@ export class ProxyServer {
   private async handleEmbeddings(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
-      const { token, baseUrl } = await getCopilotToken();
-      const resp = await fetch(`${baseUrl}/embeddings`, {
+      const adapter = getAdapter(this.cfg.integrationId);
+      if (adapter.kind === 'native') {
+        json(res, { error: { message: `Embeddings are not supported by the "${getCurrentBackend()}" backend`, type: 'unsupported' } }, 501);
+        return;
+      }
+      const baseUrl = await adapter.getBaseUrl();
+      const headers = { ...await adapter.getAuthHeaders(), 'Content-Type': 'application/json' };
+      const resp = await fetch(`${baseUrl}/embeddings${adapter.getQuerySuffix?.() ?? ''}`, {
         method: 'POST',
-        headers: { ...COPILOT_HEADERS(this.cfg.integrationId), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
       });
       json(res, await resp.json(), resp.status);
@@ -475,14 +539,23 @@ export class ProxyServer {
     const start = Date.now();
 
     if (this.cfg.logRequests) {
-      console.log(`[proxy] chat model=${model} stream=${isStream}`);
+      console.log(`[proxy] chat model=${model} stream=${isStream} backend=${getCurrentBackend()}`);
     }
 
     try {
-      const { token, baseUrl } = await getCopilotToken();
-      const url = `${baseUrl}/chat/completions`;
-      const headers = { ...COPILOT_HEADERS(this.cfg.integrationId), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-      const cleanBody = stripStreamOptionsForClaude(body, model);
+      const adapter = getAdapter(this.cfg.integrationId);
+
+      if (adapter.kind === 'native') {
+        await this._nativeChat(res, adapter, body, model, requestId, start, isStream);
+        return;
+      }
+
+      const baseUrl = await adapter.getBaseUrl();
+      const url = `${baseUrl}/chat/completions${adapter.getQuerySuffix?.() ?? ''}`;
+      const headers = { ...await adapter.getAuthHeaders(), 'Content-Type': 'application/json' };
+      const cleanBody = adapter.stripStreamOptionsFor?.(model)
+        ? (({ stream_options: _so, ...rest }) => rest)(body as Record<string, unknown> & { stream_options?: unknown })
+        : body;
 
       if (isStream) {
         await this._streamChat(res, url, headers, cleanBody, model, requestId, start);
@@ -493,6 +566,37 @@ export class ProxyServer {
       console.error(`[proxy] chat error: ${err}`);
       json(res, { error: { message: String(err), type: 'proxy_error' } }, 500);
     }
+  }
+
+  private async _nativeChat(
+    res: http.ServerResponse,
+    adapter: Extract<BackendAdapter, { kind: 'native' }>,
+    body: Record<string, unknown>,
+    model: string,
+    requestId: string,
+    start: number,
+    isStream: boolean,
+  ): Promise<void> {
+    if (isStream) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+      const { promptTokens, completionTokens, responseText } = await adapter.chatStream(body, line => res.write(line));
+      storeExchange(requestId, model, body, responseText);
+      recordRequest(model, promptTokens, completionTokens, Date.now() - start);
+      res.end();
+      return;
+    }
+
+    const { status, data } = await adapter.chat(body);
+    if (status >= 400) { json(res, data, status); return; }
+
+    const choices = (data.choices as Array<Record<string, unknown>>) ?? [];
+    const responseText = choices.length > 0 ? String(((choices[0].message as Record<string, unknown>)?.content) ?? '') : '';
+    storeExchange(requestId, model, body, responseText);
+
+    const usage = (data.usage as Record<string, number>) ?? {};
+    recordRequest(model, usage.prompt_tokens ?? 0, usage.completion_tokens ?? 0, Date.now() - start);
+
+    json(res, data);
   }
 
   private async _jsonChat(
@@ -626,10 +730,29 @@ export class ProxyServer {
     const start = Date.now();
 
     try {
-      const { token, baseUrl } = await getCopilotToken();
-      const url = `${baseUrl}/chat/completions`;
-      const headers = { ...COPILOT_HEADERS(this.cfg.integrationId), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const adapter = getAdapter(this.cfg.integrationId);
       const oaiBody = anthropicToOpenAI(body as Parameters<typeof anthropicToOpenAI>[0]);
+
+      if (adapter.kind === 'native') {
+        // Native adapters don't stream token-by-token here; emit the full response as one chunk.
+        const { status, data } = await adapter.chat(oaiBody as unknown as Record<string, unknown>);
+        if (status >= 400) { json(res, data, status); return; }
+        const anthropicResp = openAIToAnthropicResponse(data, model);
+        const usage = (data.usage as Record<string, number>) ?? {};
+        recordRequest(model, usage.prompt_tokens ?? 0, usage.completion_tokens ?? 0, Date.now() - start);
+        if (isStream) {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          res.write(`data: ${JSON.stringify(anthropicResp)}\n\n`);
+          res.end();
+        } else {
+          json(res, anthropicResp);
+        }
+        return;
+      }
+
+      const baseUrl = await adapter.getBaseUrl();
+      const url = `${baseUrl}/chat/completions${adapter.getQuerySuffix?.() ?? ''}`;
+      const headers = { ...await adapter.getAuthHeaders(), 'Content-Type': 'application/json' };
 
       if (isStream) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -738,6 +861,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   <div style="display:flex;gap:9px;align-items:center">
     <span class="ts" id="ts"></span>
     <a href="/compilation" class="btn" style="text-decoration:none">&#128269; Message Inspector</a>
+    <a href="/admin" class="btn" style="text-decoration:none">&#9881; Backend</a>
     <button class="btn" onclick="load()">&#8635; Refresh</button>
   </div>
 </div>
