@@ -32,9 +32,12 @@ function getRegion(): string {
 // Lazily import + construct the client so the SDK dependency is only required when this backend is selected.
 async function getClient() {
   const { BedrockRuntimeClient } = await import('@aws-sdk/client-bedrock-runtime');
-  // No explicit `credentials` — uses the AWS SDK default credential provider chain
-  // (env vars → shared profile/AWS_PROFILE → SSO → instance role). See docs/PLAN.md Step 10.
-  return new BedrockRuntimeClient({ region: getRegion() });
+  // App-scoped static keys take priority so they don't collide with the shell's SSO AWS_* vars.
+  const accessKeyId = process.env.AIAPP_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AIAPP_AWS_SECRET_ACCESS_KEY;
+  const credentials = accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined;
+  // Falls back to the AWS SDK default credential provider chain when the app-scoped vars are absent.
+  return new BedrockRuntimeClient({ region: getRegion(), credentials });
 }
 
 interface ConverseMessage {

@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  aiapp Bedrock + RAG IAM setup. Creates two identities:
+  (A) IAM user 'aiapp-bedrock-svc' used by the app from Azure (static keys), and
+  (B) IAM role 'bedrock-kb-execution-role-dev' that the Bedrock service assumes to run
+  Knowledge Base ingestion (read S3 -> invoke embeddings -> write vectors to OpenSearch Serverless).
+
+Parameters:
+  UserName:
+    Type: String
+    Default: aiapp-bedrock-svc
+    Description: Name of the IAM user the app authenticates as (Identity A).
+
+  ExecutionRoleName:
+    Type: String
+    Default: bedrock-kb-execution-role-dev
+    Description: Name of the Bedrock execution role (Identity B).
+
+  KbSourceBucket:
+    Type: String
+    Default: dev-agentic-ai-kb-source
+    Description: S3 bucket holding Knowledge Base source documents (already created).
+
+  EmbeddingsModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    Description: Foundation-model ID used for KB embeddings. Must match the model chosen when the KB is created.
+
+  CreateAccessKey:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      If 'true', CloudFormation also creates a programmatic access key for the user and exposes
+      it as stack outputs. Leave 'false' if IT prefers to mint the key manually in the console.
+
+Conditions:
+  ShouldCreateAccessKey: !Equals [!Ref CreateAccessKey, 'true']
+
+Resources:
+
+  # ---------- Identity A: IAM user + permission policy ----------
+  AiappBedrockUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref UserName
+      Policies:
+        - PolicyName: aiapp-bedrock-svc
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockResourceScoped
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:Retrieve
+                  - bedrock:RetrieveAndGenerate
+                  - bedrock:*Guardrail*
+                  - bedrock:*KnowledgeBase*
+                  - bedrock:*DataSource*
+                  - bedrock:*IngestionJob*
+                  - bedrock:*Agent*
+                  - bedrock:*ModelInvocationJob*
+                Resource:
+                  # Foundation-model ARNs are account-less and region-specific; allow all regions
+                  # so cross-region inference profiles (e.g. au.*) can reach every member region.
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+              - Sid: BedrockDiscovery
+                Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:GetFoundationModel
+                  - bedrock:ListInferenceProfiles
+                  - bedrock:GetInferenceProfile
+                Resource: '*'
+              - Sid: OpenSearchServerlessControlPlane
+                Effect: Allow
+                Action:
+                  - aoss:*Collection*
+                  - aoss:*SecurityPolicy*
+                  - aoss:*AccessPolicy*
+                  - aoss:*Policies*
+                Resource: '*'
+              - Sid: OpenSearchServerlessDataPlane
+                Effect: Allow
+                Action:
+                  - aoss:APIAccessAll
+                Resource: !Sub arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/*
+              - Sid: S3KnowledgeBaseSource
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::${KbSourceBucket}
+                  - !Sub arn:aws:s3:::${KbSourceBucket}/*
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - bedrock:*ModelInvocationLoggingConfiguration
+                Resource: '*'
+              - Sid: PassBedrockExecutionRole
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt BedrockKbExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: bedrock.amazonaws.com
+
+  AiappBedrockUserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Condition: ShouldCreateAccessKey
+    Properties:
+      UserName: !Ref AiappBedrockUser
+
+  # ---------- Identity B: execution role (trust + permissions) ----------
+  BedrockKbExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref ExecutionRoleName
+      # trust policy — only the Bedrock service, only for KBs in this account/region.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowBedrockToAssume
+            Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*
+      Policies:
+        - PolicyName: bedrock-kb-permissions
+          # permission policy — read S3 source, invoke embeddings, aoss data plane.
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3ReadSourceDocs
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${KbSourceBucket}
+                  - !Sub arn:aws:s3:::${KbSourceBucket}/*
+                Condition:
+                  StringEquals:
+                    aws:ResourceAccount: !Ref AWS::AccountId
+              - Sid: InvokeEmbeddingsModel
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${EmbeddingsModelId}
+              - Sid: OpenSearchServerlessDataAccess
+                Effect: Allow
+                Action:
+                  - aoss:APIAccessAll
+                Resource:
+                  - !Sub arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/*
+
+Outputs:
+  UserArn:
+    Description: ARN of the app IAM user (Identity A).
+    Value: !GetAtt AiappBedrockUser.Arn
+
+  ExecutionRoleArn:
+    Description: ARN of the Bedrock execution role (Identity B) — reference this when creating KBs/Agents.
+    Value: !GetAtt BedrockKbExecutionRole.Arn
+
+  AccessKeyId:
+    Condition: ShouldCreateAccessKey
+    Description: Access key ID for the app user (only if CreateAccessKey=true).
+    Value: !Ref AiappBedrockUserAccessKey
+
+  SecretAccessKey:
+    Condition: ShouldCreateAccessKey
+    Description: Secret access key for the app user (only if CreateAccessKey=true). Store in Key Vault immediately, then rotate.
+    Value: !GetAtt AiappBedrockUserAccessKey.SecretAccessKey

@@ -44,11 +44,6 @@ data "azurerm_key_vault_secret" "aws_secret_access_key" {
   key_vault_id = data.azurerm_key_vault.kv.id
 }
 
-data "azurerm_key_vault_secret" "aws_session_token" {
-  name         = "aws-session-token"
-  key_vault_id = data.azurerm_key_vault.kv.id
-}
-
 # ── AIProxy — this repo's own resource, created by this Terraform state ──
 resource "azurerm_linux_web_app" "aiproxy" {
   name                = var.webapp_name
@@ -83,13 +78,12 @@ resource "azurerm_linux_web_app" "aiproxy" {
     PROXY_STORAGE_DIR    = "/home/data"
     GHU_APP_TOKEN        = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=ghu-app-token)"
 
-    # aws-bedrock backend (Key Vault references — secrets uploaded manually, ~8h STS validity)
+    # aws-bedrock backend (Key Vault references — permanent aiapp-bedrock-svc IAM user keys)
     AWS_REGION            = var.aws_region
     AWS_BEDROCK_MODEL_ID  = var.aws_bedrock_model_id
     AWS_BEDROCK_MODELS_ALLOWLIST = var.aws_bedrock_models_allowlist
     AWS_ACCESS_KEY_ID     = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=aws-access-key-id)"
     AWS_SECRET_ACCESS_KEY = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=aws-secret-access-key)"
-    AWS_SESSION_TOKEN     = "@Microsoft.KeyVault(VaultName=${var.keyvault_name};SecretName=aws-session-token)"
 
     # copilot backend — filter the passthrough /v1/models list shown to clients (e.g. AItutor admin)
     COPILOT_MODELS_ALLOWLIST = var.copilot_models_allowlist
